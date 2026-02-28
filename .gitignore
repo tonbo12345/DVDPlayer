@@ -1,0 +1,39 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Visual Studio
+.vs/
+*.rsuser
+[Dd]ebug/
+[Rr]elease/
+
+# NuGet
+packages/
+*.nupkg
+
+# Build results
+[Bb]uild[Ll]og.*
+*.VisualState.xml
+TestResult.xml
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.tmp
+*.bak
+*.swp
+
+# IDE
+.idea/
+*.sln.iml
+.vscode/
+
+# LibVLC native binaries (downloaded via NuGet)
+libvlc/
