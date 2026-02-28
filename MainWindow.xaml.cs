@@ -107,6 +107,11 @@ namespace DVDPlayer
                 BtnPlayPause.Content = "▶";
                 WelcomePanel.Visibility = Visibility.Visible;
             });
+            _mediaPlayer.EncounteredError += (s, args) => Dispatcher.Invoke(() =>
+            {
+                Title = "DVD Player - エラー発生";
+                System.Diagnostics.Debug.WriteLine("LibVLC EncounteredError event fired");
+            });
 
             // VLC の内蔵字幕を無効化（外部SRT字幕オーバーレイを使用）
             _mediaPlayer.SetSpu(-1);
@@ -169,7 +174,46 @@ namespace DVDPlayer
                 var mediaUri = DvdManager.GetMediaUri(driveLetter, discType);
                 _currentMediaKey = mediaUri;
 
-                var media = new Media(_libVLC, new Uri(mediaUri));
+                // LibVLC の Media を FromLocation で作成（dvd:// / bluray:// スキーム対応）
+                var media = new Media(_libVLC, mediaUri, FromType.FromLocation);
+
+                // Blu-ray の場合、追加オプションを設定
+                if (discType == DiscType.BluRay)
+                {
+                    media.AddOption(":disc-caching=300");
+                }
+
+                // エラーイベントのハンドリング
+                media.StateChanged += (s, args) =>
+                {
+                    if (args.State == VLCState.Error)
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            // dvd:// がダメなら直接パスで再生を試みる
+                            var drivePath = driveLetter.TrimEnd('\\', '/');
+                            if (!drivePath.EndsWith(':')) drivePath += ":";
+                            drivePath += "\\";
+
+                            try
+                            {
+                                var fallbackMedia = new Media(_libVLC!, drivePath, FromType.FromPath);
+                                _mediaPlayer!.Media = fallbackMedia;
+                                _mediaPlayer.Play();
+                            }
+                            catch
+                            {
+                                MessageBox.Show(
+                                    $"ディスクの再生に失敗しました。\n" +
+                                    $"URI: {mediaUri}\n" +
+                                    $"ディスク種類: {discType}\n\n" +
+                                    $"VLC でこのディスクが再生できるか確認してください。",
+                                    "再生エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                            }
+                        });
+                    }
+                };
+
                 _mediaPlayer.Media = media;
                 _mediaPlayer.Play();
                 _subtitleSync?.Start();
@@ -188,7 +232,7 @@ namespace DVDPlayer
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"ディスクの再生に失敗しました:\n{ex.Message}",
+                MessageBox.Show($"ディスクの再生に失敗しました:\n{ex.Message}\n\nドライブ: {driveLetter}",
                     "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }

@@ -87,7 +87,7 @@ namespace DVDPlayer.Services
 
         /// <summary>
         /// ドライブレターから LibVLC 用の URI に変換する
-        /// DVD → dvd:///D:  Blu-ray → bluray:///D:
+        /// DVD → dvd:///D:/  Blu-ray → bluray:///D:/
         /// </summary>
         public static string GetMediaUri(string driveLetter, DiscType discType)
         {
@@ -97,9 +97,9 @@ namespace DVDPlayer.Services
 
             return discType switch
             {
-                DiscType.BluRay => $"bluray:///{driveLetter}",
-                DiscType.DVD => $"dvd:///{driveLetter}",
-                _ => $"dvd:///{driveLetter}" // デフォルトは DVD として試行
+                DiscType.BluRay => $"bluray:///{driveLetter}/",
+                DiscType.DVD => $"dvd:///{driveLetter}/",
+                _ => $"dvd:///{driveLetter}/" // デフォルトは DVD として試行
             };
         }
 
