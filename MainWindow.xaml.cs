@@ -1,26 +1,48 @@
-﻿using System.Windows;
+﻿using System.IO;
+using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using LibVLCSharp.Shared;
 using Microsoft.Win32;
 using DVDPlayer.Services;
+
+using VlcMediaPlayer = LibVLCSharp.Shared.MediaPlayer;
 
 namespace DVDPlayer
 {
     /// <summary>
     /// DVD Player メインウィンドウ
-    /// デュアル字幕（日本語/英語）表示対応
+    /// デュアル字幕（日本語/英語）表示対応 + 英語学習機能
     /// </summary>
     public partial class MainWindow : Window
     {
         private LibVLC? _libVLC;
-        private MediaPlayer? _mediaPlayer;
+        private VlcMediaPlayer? _mediaPlayer;
         private SubtitleSyncService? _subtitleSync;
+        private ResumeService? _resumeService;
         private System.Windows.Threading.DispatcherTimer? _uiTimer;
         private bool _isSeeking = false;
         private bool _isFullScreen = false;
         private WindowState _previousWindowState;
         private WindowStyle _previousWindowStyle;
         private ResizeMode _previousResizeMode;
+
+        // 現在のメディアキー（レジューム用）
+        private string _currentMediaKey = "";
+
+        // A-B リピート
+        private long _abPointA = -1;  // ミリ秒
+        private long _abPointB = -1;  // ミリ秒
+        private bool _abRepeatActive = false;
+        private int _abClickState = 0; // 0=idle, 1=A set, 2=B set
+
+        // 再生速度
+        private float _currentSpeed = 1.0f;
+
+        // 字幕表示状態
+        private bool _jpSubVisible = true;
+        private bool _enSubVisible = true;
 
         public MainWindow()
         {
@@ -38,8 +60,11 @@ namespace DVDPlayer
                 "--no-video-title-show"
             );
 
-            _mediaPlayer = new MediaPlayer(_libVLC);
+            _mediaPlayer = new VlcMediaPlayer(_libVLC);
             VideoView.MediaPlayer = _mediaPlayer;
+
+            // レジュームサービスの初期化
+            _resumeService = new ResumeService();
 
             // 字幕同期サービスの初期化
             _subtitleSync = new SubtitleSyncService();
@@ -54,9 +79,9 @@ namespace DVDPlayer
             _subtitleSync.JapaneseSubtitleChanged += OnJapaneseSubtitleChanged;
             _subtitleSync.EnglishSubtitleChanged += OnEnglishSubtitleChanged;
 
-            // UI 更新タイマー（シークバー・時間表示用）
+            // UI 更新タイマー（シークバー・時間表示・A-Bリピート用）
             _uiTimer = new System.Windows.Threading.DispatcherTimer();
-            _uiTimer.Interval = TimeSpan.FromMilliseconds(250);
+            _uiTimer.Interval = TimeSpan.FromMilliseconds(200);
             _uiTimer.Tick += UiTimer_Tick;
             _uiTimer.Start();
 
@@ -92,6 +117,9 @@ namespace DVDPlayer
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            // レジューム位置を保存
+            SaveResumePosition();
+
             _subtitleSync?.Stop();
             _subtitleSync?.Dispose();
             _uiTimer?.Stop();
@@ -105,7 +133,6 @@ namespace DVDPlayer
 
         #region DVD 操作
 
-        /// <summary>DVD ドライブを自動検出してメッセージを表示</summary>
         private void AutoDetectDvd()
         {
             var dvdDrive = DvdManager.FindDvdWithMedia();
@@ -124,7 +151,6 @@ namespace DVDPlayer
             }
         }
 
-        /// <summary>DVD を再生する</summary>
         private void PlayDvd(string driveLetter)
         {
             if (_libVLC == null || _mediaPlayer == null) return;
@@ -132,6 +158,7 @@ namespace DVDPlayer
             try
             {
                 var dvdUri = DvdManager.GetDvdUri(driveLetter);
+                _currentMediaKey = dvdUri;
                 var media = new Media(_libVLC, new Uri(dvdUri));
                 _mediaPlayer.Media = media;
                 _mediaPlayer.Play();
@@ -145,6 +172,9 @@ namespace DVDPlayer
                         _mediaPlayer?.SetSpu(-1);
                     });
                 });
+
+                // レジューム確認
+                CheckResume(dvdUri);
             }
             catch (Exception ex)
             {
@@ -153,21 +183,290 @@ namespace DVDPlayer
             }
         }
 
-        /// <summary>メディアファイルを再生する（DVD以外も対応）</summary>
         private void PlayMedia(string path)
         {
             if (_libVLC == null || _mediaPlayer == null) return;
 
             try
             {
+                _currentMediaKey = path;
                 var media = new Media(_libVLC, new Uri(path));
                 _mediaPlayer.Media = media;
                 _mediaPlayer.Play();
                 _subtitleSync?.Start();
+
+                // レジューム確認
+                CheckResume(path);
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"再生に失敗しました:\n{ex.Message}",
+                    "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        #endregion
+
+        #region レジューム機能
+
+        private void CheckResume(string mediaKey)
+        {
+            if (_resumeService == null || _mediaPlayer == null) return;
+
+            if (_resumeService.HasResumePosition(mediaKey))
+            {
+                var position = _resumeService.GetPosition(mediaKey);
+                var timeStr = TimeSpan.FromMilliseconds(position).ToString(@"hh\:mm\:ss");
+
+                // 少し遅延してからレジューム確認（メディアの読み込み待ち）
+                System.Threading.Tasks.Task.Delay(3000).ContinueWith(_ =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        var result = MessageBox.Show(
+                            $"前回の再生位置({timeStr})から続きを再生しますか？",
+                            "続きから再生",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Question);
+
+                        if (result == MessageBoxResult.Yes && _mediaPlayer != null)
+                        {
+                            _mediaPlayer.Time = position;
+                        }
+                    });
+                });
+            }
+        }
+
+        private void SaveResumePosition()
+        {
+            if (_resumeService == null || _mediaPlayer == null) return;
+            if (string.IsNullOrEmpty(_currentMediaKey)) return;
+
+            _resumeService.SavePosition(_currentMediaKey, _mediaPlayer.Time, _mediaPlayer.Length);
+        }
+
+        private void MenuResume_Click(object sender, RoutedEventArgs e)
+        {
+            if (_resumeService == null || _mediaPlayer == null) return;
+            if (string.IsNullOrEmpty(_currentMediaKey)) return;
+
+            var position = _resumeService.GetPosition(_currentMediaKey);
+            if (position > 0)
+            {
+                _mediaPlayer.Time = position;
+            }
+        }
+
+        #endregion
+
+        #region A-B リピート
+
+        private void MenuSetA_Click(object sender, RoutedEventArgs e)
+        {
+            SetPointA();
+        }
+
+        private void MenuSetB_Click(object sender, RoutedEventArgs e)
+        {
+            SetPointB();
+        }
+
+        private void MenuClearAB_Click(object sender, RoutedEventArgs e)
+        {
+            ClearABRepeat();
+        }
+
+        private void BtnABRepeat_Click(object sender, RoutedEventArgs e)
+        {
+            // ボタンクリックで順番に A → B → 解除
+            switch (_abClickState)
+            {
+                case 0:
+                    SetPointA();
+                    _abClickState = 1;
+                    break;
+                case 1:
+                    SetPointB();
+                    _abClickState = 2;
+                    break;
+                case 2:
+                    ClearABRepeat();
+                    _abClickState = 0;
+                    break;
+            }
+        }
+
+        private void SetPointA()
+        {
+            if (_mediaPlayer == null) return;
+            _abPointA = _mediaPlayer.Time;
+            _abPointB = -1;
+            _abRepeatActive = false;
+
+            var timeStr = TimeSpan.FromMilliseconds(_abPointA).ToString(@"mm\:ss");
+            AbRepeatIndicator.Visibility = Visibility.Visible;
+            TxtAbRepeat.Text = $"A: {timeStr} → B: ...";
+            BtnABRepeat.Content = "🅰";
+        }
+
+        private void SetPointB()
+        {
+            if (_mediaPlayer == null || _abPointA < 0) return;
+            _abPointB = _mediaPlayer.Time;
+
+            // A が B より大きい場合はスワップ
+            if (_abPointA > _abPointB)
+            {
+                (_abPointA, _abPointB) = (_abPointB, _abPointA);
+            }
+
+            _abRepeatActive = true;
+            var timeA = TimeSpan.FromMilliseconds(_abPointA).ToString(@"mm\:ss");
+            var timeB = TimeSpan.FromMilliseconds(_abPointB).ToString(@"mm\:ss");
+            TxtAbRepeat.Text = $"🔁 A: {timeA} → B: {timeB}";
+            BtnABRepeat.Content = "🅱";
+        }
+
+        private void ClearABRepeat()
+        {
+            _abPointA = -1;
+            _abPointB = -1;
+            _abRepeatActive = false;
+            _abClickState = 0;
+            AbRepeatIndicator.Visibility = Visibility.Collapsed;
+            BtnABRepeat.Content = "🔁";
+        }
+
+        #endregion
+
+        #region 再生速度
+
+        private void MenuSpeed_Click(object sender, RoutedEventArgs e)
+        {
+            if (_mediaPlayer == null) return;
+            if (sender is System.Windows.Controls.MenuItem menuItem && menuItem.Tag is string speedStr)
+            {
+                if (float.TryParse(speedStr, System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out float speed))
+                {
+                    SetPlaybackSpeed(speed);
+                }
+            }
+        }
+
+        private void SetPlaybackSpeed(float speed)
+        {
+            if (_mediaPlayer == null) return;
+
+            _currentSpeed = speed;
+            _mediaPlayer.SetRate(speed);
+
+            if (Math.Abs(speed - 1.0f) < 0.01f)
+            {
+                SpeedIndicator.Visibility = Visibility.Collapsed;
+                TxtSpeedBar.Text = "";
+            }
+            else
+            {
+                SpeedIndicator.Visibility = Visibility.Visible;
+                TxtSpeed.Text = $"⏩ {speed:F2}x";
+                TxtSpeedBar.Text = $"[{speed:F1}x]";
+            }
+        }
+
+        #endregion
+
+        #region 字幕フォントサイズ
+
+        private void MenuJpFontSize_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.MenuItem menuItem && menuItem.Tag is string sizeStr)
+            {
+                if (double.TryParse(sizeStr, out double size))
+                {
+                    JapaneseSubtitle.FontSize = size;
+                }
+            }
+        }
+
+        private void MenuEnFontSize_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.MenuItem menuItem && menuItem.Tag is string sizeStr)
+            {
+                if (double.TryParse(sizeStr, out double size))
+                {
+                    EnglishSubtitle.FontSize = size;
+                }
+            }
+        }
+
+        private void MenuHideJpSub_Click(object sender, RoutedEventArgs e)
+        {
+            _jpSubVisible = !_jpSubVisible;
+            JapaneseSubtitle.Visibility = _jpSubVisible ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void MenuHideEnSub_Click(object sender, RoutedEventArgs e)
+        {
+            _enSubVisible = !_enSubVisible;
+            EnglishSubtitle.Visibility = _enSubVisible ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        #endregion
+
+        #region スナップショット
+
+        private void MenuSnapshot_Click(object sender, RoutedEventArgs e)
+        {
+            TakeSnapshot();
+        }
+
+        private void TakeSnapshot()
+        {
+            if (_mediaPlayer == null || !_mediaPlayer.IsPlaying) return;
+
+            try
+            {
+                // スナップショット保存先
+                var picturesDir = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+                var snapshotDir = Path.Combine(picturesDir, "DVDPlayer_Snapshots");
+                Directory.CreateDirectory(snapshotDir);
+
+                var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                var jpText = JapaneseSubtitle.Text?.Replace("\n", " ") ?? "";
+                var enText = EnglishSubtitle.Text?.Replace("\n", " ") ?? "";
+
+                // VLC のスナップショット機能を使用
+                var imagePath = Path.Combine(snapshotDir, $"snapshot_{timestamp}.png");
+                _mediaPlayer.TakeSnapshot(0, imagePath, 0, 0);
+
+                // 字幕テキストも一緒にテキストファイルに保存
+                var textPath = Path.Combine(snapshotDir, $"snapshot_{timestamp}.txt");
+                var playTime = TimeSpan.FromMilliseconds(_mediaPlayer.Time).ToString(@"hh\:mm\:ss");
+                File.WriteAllText(textPath,
+                    $"Time: {playTime}\n" +
+                    $"Japanese: {jpText}\n" +
+                    $"English: {enText}\n");
+
+                // 保存通知（一時的に字幕エリアに表示）
+                var originalJp = JapaneseSubtitle.Text;
+                JapaneseSubtitle.Text = $"📸 スナップショット保存: {imagePath}";
+                JapaneseSubtitle.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xA6, 0xE3, 0xA1));
+
+                // 2秒後に元に戻す
+                System.Threading.Tasks.Task.Delay(2000).ContinueWith(_ =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        JapaneseSubtitle.Text = originalJp;
+                        JapaneseSubtitle.Foreground = new SolidColorBrush(Colors.White);
+                    });
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"スナップショットの保存に失敗しました:\n{ex.Message}",
                     "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -180,7 +479,8 @@ namespace DVDPlayer
         {
             Dispatcher.Invoke(() =>
             {
-                JapaneseSubtitle.Text = text;
+                if (_jpSubVisible)
+                    JapaneseSubtitle.Text = text;
             });
         }
 
@@ -188,7 +488,8 @@ namespace DVDPlayer
         {
             Dispatcher.Invoke(() =>
             {
-                EnglishSubtitle.Text = text;
+                if (_enSubVisible)
+                    EnglishSubtitle.Text = text;
             });
         }
 
@@ -212,6 +513,21 @@ namespace DVDPlayer
                 {
                     SeekBar.Value = (double)_mediaPlayer.Time / _mediaPlayer.Length * 100;
                 }
+
+                // A-B リピートのチェック
+                if (_abRepeatActive && _abPointA >= 0 && _abPointB >= 0)
+                {
+                    if (_mediaPlayer.Time >= _abPointB)
+                    {
+                        _mediaPlayer.Time = _abPointA;
+                    }
+                }
+
+                // レジューム位置を定期的に保存（30秒ごと）
+                if (_mediaPlayer.Time % 30000 < 200)
+                {
+                    SaveResumePosition();
+                }
             }
         }
 
@@ -227,6 +543,7 @@ namespace DVDPlayer
             {
                 _mediaPlayer.Pause();
                 _subtitleSync?.Stop();
+                SaveResumePosition();
             }
             else
             {
@@ -238,9 +555,9 @@ namespace DVDPlayer
         private void BtnStop_Click(object sender, RoutedEventArgs e)
         {
             if (_mediaPlayer == null) return;
+            SaveResumePosition();
             _subtitleSync?.Stop();
-
-            // Stop は別スレッドから呼ぶ必要がある
+            ClearABRepeat();
             System.Threading.Tasks.Task.Run(() => _mediaPlayer.Stop());
         }
 
@@ -256,22 +573,11 @@ namespace DVDPlayer
 
         private void BtnOpenDvd_Click(object sender, RoutedEventArgs e)
         {
-            // DVD ドライブの選択ダイアログ
             var dvdDrives = DvdManager.GetDvdDrives();
 
             if (dvdDrives.Count == 0)
             {
-                // DVD ドライブがない場合、ファイルを開く
-                var openFileDialog = new OpenFileDialog
-                {
-                    Title = "メディアファイルを開く",
-                    Filter = "動画ファイル|*.mp4;*.mkv;*.avi;*.wmv;*.mov;*.iso|すべてのファイル|*.*"
-                };
-
-                if (openFileDialog.ShowDialog() == true)
-                {
-                    PlayMedia(openFileDialog.FileName);
-                }
+                OpenMediaFile();
             }
             else if (dvdDrives.Count == 1)
             {
@@ -279,7 +585,6 @@ namespace DVDPlayer
             }
             else
             {
-                // 複数ドライブの場合、最初のメディアがあるドライブを選択
                 var dvdWithMedia = DvdManager.FindDvdWithMedia();
                 if (dvdWithMedia != null)
                 {
@@ -289,6 +594,25 @@ namespace DVDPlayer
                 {
                     PlayDvd(dvdDrives[0].Name.TrimEnd('\\'));
                 }
+            }
+        }
+
+        private void MenuOpenFile_Click(object sender, RoutedEventArgs e)
+        {
+            OpenMediaFile();
+        }
+
+        private void OpenMediaFile()
+        {
+            var openFileDialog = new OpenFileDialog
+            {
+                Title = "メディアファイルを開く",
+                Filter = "動画ファイル|*.mp4;*.mkv;*.avi;*.wmv;*.mov;*.iso|すべてのファイル|*.*"
+            };
+
+            if (openFileDialog.ShowDialog() == true)
+            {
+                PlayMedia(openFileDialog.FileName);
             }
         }
 
@@ -303,6 +627,8 @@ namespace DVDPlayer
             if (openFileDialog.ShowDialog() == true)
             {
                 _subtitleSync?.LoadJapaneseSubtitles(openFileDialog.FileName);
+                _jpSubVisible = true;
+                JapaneseSubtitle.Visibility = Visibility.Visible;
             }
         }
 
@@ -317,6 +643,8 @@ namespace DVDPlayer
             if (openFileDialog.ShowDialog() == true)
             {
                 _subtitleSync?.LoadEnglishSubtitles(openFileDialog.FileName);
+                _enSubVisible = true;
+                EnglishSubtitle.Visibility = Visibility.Visible;
             }
         }
 
@@ -362,7 +690,6 @@ namespace DVDPlayer
 
         private void SeekBar_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            // シーク中のみ時間表示を更新
             if (_isSeeking && _mediaPlayer != null && _mediaPlayer.Length > 0)
             {
                 var newTime = TimeSpan.FromMilliseconds(SeekBar.Value / 100.0 * _mediaPlayer.Length);
@@ -378,7 +705,6 @@ namespace DVDPlayer
         {
             if (_isFullScreen)
             {
-                // ウィンドウモードに戻る
                 WindowStyle = _previousWindowStyle;
                 WindowState = _previousWindowState;
                 ResizeMode = _previousResizeMode;
@@ -386,7 +712,6 @@ namespace DVDPlayer
             }
             else
             {
-                // フルスクリーンに切り替え
                 _previousWindowState = WindowState;
                 _previousWindowStyle = WindowStyle;
                 _previousResizeMode = ResizeMode;
@@ -416,23 +741,20 @@ namespace DVDPlayer
                     e.Handled = true;
                     break;
                 case Key.Escape:
-                    if (_isFullScreen)
-                    {
-                        ToggleFullScreen();
-                        e.Handled = true;
-                    }
+                    if (_isFullScreen) ToggleFullScreen();
+                    e.Handled = true;
                     break;
                 case Key.Left:
                     if (_mediaPlayer != null)
                     {
-                        _mediaPlayer.Time -= 10000; // 10秒戻る
+                        _mediaPlayer.Time = Math.Max(0, _mediaPlayer.Time - 10000);
                         e.Handled = true;
                     }
                     break;
                 case Key.Right:
                     if (_mediaPlayer != null)
                     {
-                        _mediaPlayer.Time += 10000; // 10秒進む
+                        _mediaPlayer.Time += 10000;
                         e.Handled = true;
                     }
                     break;
@@ -448,6 +770,39 @@ namespace DVDPlayer
                     BtnVolume_Click(sender, e);
                     e.Handled = true;
                     break;
+                case Key.S:
+                    TakeSnapshot();
+                    e.Handled = true;
+                    break;
+                // A-B リピート: [ キーで A 地点、] キーで B 地点
+                case Key.OemOpenBrackets:
+                    SetPointA();
+                    _abClickState = 1;
+                    e.Handled = true;
+                    break;
+                case Key.OemCloseBrackets:
+                    SetPointB();
+                    _abClickState = 2;
+                    e.Handled = true;
+                    break;
+                case Key.OemBackslash:
+                    ClearABRepeat();
+                    e.Handled = true;
+                    break;
+                // 再生速度: - で遅く、= で速く
+                case Key.OemMinus:
+                    SetPlaybackSpeed(Math.Max(0.25f, _currentSpeed - 0.25f));
+                    e.Handled = true;
+                    break;
+                case Key.OemPlus:
+                    SetPlaybackSpeed(Math.Min(4.0f, _currentSpeed + 0.25f));
+                    e.Handled = true;
+                    break;
+                // 速度リセット
+                case Key.D0:
+                    SetPlaybackSpeed(1.0f);
+                    e.Handled = true;
+                    break;
             }
         }
 
@@ -457,8 +812,12 @@ namespace DVDPlayer
 
         private void VideoArea_MouseMove(object sender, MouseEventArgs e)
         {
-            // マウスが動いたらコントロールバーを表示
             ControlBar.Visibility = Visibility.Visible;
+        }
+
+        private void SubtitleOverlay_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            // 右クリックメニューはContextMenuで自動表示
         }
 
         #endregion

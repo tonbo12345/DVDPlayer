@@ -24,7 +24,40 @@
             <!-- LibVLCSharp VideoView -->
             <vlc:VideoView x:Name="VideoView">
                 <!-- VideoView 内に配置して airspace 問題を回避 -->
-                <Grid x:Name="SubtitleOverlay">
+                <Grid x:Name="SubtitleOverlay" MouseRightButtonUp="SubtitleOverlay_MouseRightButtonUp">
+
+                    <!-- A-B リピート表示インジケーター -->
+                    <Border x:Name="AbRepeatIndicator"
+                            VerticalAlignment="Top"
+                            HorizontalAlignment="Right"
+                            Margin="0,8,8,0"
+                            Background="#AA000000"
+                            CornerRadius="4"
+                            Padding="8,4"
+                            Visibility="Collapsed">
+                        <TextBlock x:Name="TxtAbRepeat"
+                                   Foreground="#FF89B4FA"
+                                   FontFamily="{StaticResource UIFont}"
+                                   FontSize="12"
+                                   FontWeight="SemiBold" />
+                    </Border>
+
+                    <!-- 再生速度表示インジケーター -->
+                    <Border x:Name="SpeedIndicator"
+                            VerticalAlignment="Top"
+                            HorizontalAlignment="Left"
+                            Margin="8,8,0,0"
+                            Background="#AA000000"
+                            CornerRadius="4"
+                            Padding="8,4"
+                            Visibility="Collapsed">
+                        <TextBlock x:Name="TxtSpeed"
+                                   Foreground="#FFA6E3A1"
+                                   FontFamily="{StaticResource UIFont}"
+                                   FontSize="12"
+                                   FontWeight="SemiBold" />
+                    </Border>
+
                     <!-- 日本語字幕 (上部) -->
                     <TextBlock x:Name="JapaneseSubtitle"
                                VerticalAlignment="Top"
@@ -64,6 +97,70 @@
                                               Opacity="0.9" />
                         </TextBlock.Effect>
                     </TextBlock>
+
+                    <!-- 右クリック コンテキストメニュー -->
+                    <Grid.ContextMenu>
+                        <ContextMenu x:Name="VideoContextMenu"
+                                     Background="#2A2A3E" Foreground="#CDD6F4"
+                                     BorderBrush="#45475A" BorderThickness="1">
+                            <!-- 再生コントロール -->
+                            <MenuItem Header="再生/一時停止" Click="BtnPlayPause_Click" InputGestureText="Space" />
+                            <MenuItem Header="停止" Click="BtnStop_Click" />
+                            <MenuItem Header="続きから再生" Click="MenuResume_Click" />
+                            <Separator />
+
+                            <!-- チャプター -->
+                            <MenuItem Header="チャプター">
+                                <MenuItem Header="前のチャプター" Click="BtnPrevChapter_Click" />
+                                <MenuItem Header="次のチャプター" Click="BtnNextChapter_Click" />
+                            </MenuItem>
+                            <Separator />
+
+                            <!-- 英語学習機能 -->
+                            <MenuItem Header="🔁 A-B リピート">
+                                <MenuItem x:Name="MenuSetA" Header="A地点を設定" Click="MenuSetA_Click" InputGestureText="[" />
+                                <MenuItem x:Name="MenuSetB" Header="B地点を設定" Click="MenuSetB_Click" InputGestureText="]" />
+                                <MenuItem Header="リピート解除" Click="MenuClearAB_Click" InputGestureText="\" />
+                            </MenuItem>
+
+                            <MenuItem Header="⏩ 再生速度">
+                                <MenuItem Header="0.5x (超スロー)" Click="MenuSpeed_Click" Tag="0.5" />
+                                <MenuItem Header="0.75x (スロー)" Click="MenuSpeed_Click" Tag="0.75" />
+                                <MenuItem Header="1.0x (通常)" Click="MenuSpeed_Click" Tag="1.0" />
+                                <MenuItem Header="1.25x" Click="MenuSpeed_Click" Tag="1.25" />
+                                <MenuItem Header="1.5x" Click="MenuSpeed_Click" Tag="1.5" />
+                                <MenuItem Header="2.0x (倍速)" Click="MenuSpeed_Click" Tag="2.0" />
+                            </MenuItem>
+                            <Separator />
+
+                            <!-- 字幕 -->
+                            <MenuItem Header="字幕 (主 - 日本語)">
+                                <MenuItem Header="字幕ファイルを読み込む..." Click="BtnLoadSubJp_Click" />
+                                <MenuItem Header="字幕を非表示" Click="MenuHideJpSub_Click" />
+                                <Separator />
+                                <MenuItem Header="フォント大 (28pt)" Click="MenuJpFontSize_Click" Tag="28" />
+                                <MenuItem Header="フォント中 (22pt)" Click="MenuJpFontSize_Click" Tag="22" />
+                                <MenuItem Header="フォント小 (16pt)" Click="MenuJpFontSize_Click" Tag="16" />
+                            </MenuItem>
+
+                            <MenuItem Header="字幕 (副 - 英語)">
+                                <MenuItem Header="字幕ファイルを読み込む..." Click="BtnLoadSubEn_Click" />
+                                <MenuItem Header="字幕を非表示" Click="MenuHideEnSub_Click" />
+                                <Separator />
+                                <MenuItem Header="フォント大 (30pt)" Click="MenuEnFontSize_Click" Tag="30" />
+                                <MenuItem Header="フォント中 (24pt)" Click="MenuEnFontSize_Click" Tag="24" />
+                                <MenuItem Header="フォント小 (18pt)" Click="MenuEnFontSize_Click" Tag="18" />
+                            </MenuItem>
+                            <Separator />
+
+                            <!-- その他 -->
+                            <MenuItem Header="📸 スナップショット保存" Click="MenuSnapshot_Click" InputGestureText="S" />
+                            <MenuItem Header="💿 DVDを開く..." Click="BtnOpenDvd_Click" />
+                            <MenuItem Header="📄 メディアファイルを開く..." Click="MenuOpenFile_Click" />
+                            <Separator />
+                            <MenuItem Header="⛶ フルスクリーン" Click="BtnFullScreen_Click" InputGestureText="F" />
+                        </ContextMenu>
+                    </Grid.ContextMenu>
                 </Grid>
             </vlc:VideoView>
 
@@ -83,11 +180,20 @@
                            Foreground="{StaticResource PrimaryText}"
                            HorizontalAlignment="Center"
                            Margin="0,0,0,8" />
-                <TextBlock Text="DVDを挿入するか、ファイルメニューからメディアを開いてください"
+                <TextBlock Text="DVDを挿入するか、右クリックメニューからメディアを開いてください"
                            FontFamily="{StaticResource JapaneseFont}"
                            FontSize="14"
                            Foreground="{StaticResource SecondaryText}"
-                           HorizontalAlignment="Center" />
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,16" />
+                <TextBlock FontFamily="{StaticResource UIFont}"
+                           FontSize="11"
+                           Foreground="{StaticResource SecondaryText}"
+                           HorizontalAlignment="Center"
+                           TextAlignment="Center"
+                           LineHeight="20">
+                    <Run Text="ショートカット: Space=再生  ←→=10秒スキップ  []=A-Bリピート  S=スナップショット" />
+                </TextBlock>
             </StackPanel>
         </Grid>
 
@@ -133,6 +239,10 @@
                         <Button x:Name="BtnStop" Style="{StaticResource MediaButton}"
                                 Content="⏹" ToolTip="停止"
                                 Click="BtnStop_Click" />
+                        <!-- A-B リピートボタン -->
+                        <Button x:Name="BtnABRepeat" Style="{StaticResource MediaButton}"
+                                Content="🔁" ToolTip="A-Bリピート ([ ] キー)"
+                                Click="BtnABRepeat_Click" />
                     </StackPanel>
 
                     <!-- 時間表示 -->
@@ -154,6 +264,14 @@
                                    FontFamily="{StaticResource UIFont}"
                                    FontSize="12"
                                    VerticalAlignment="Center" />
+                        <!-- 再生速度表示 -->
+                        <TextBlock x:Name="TxtSpeedBar"
+                                   Text=""
+                                   Foreground="{StaticResource AccentText}"
+                                   FontFamily="{StaticResource UIFont}"
+                                   FontSize="11"
+                                   VerticalAlignment="Center"
+                                   Margin="8,0,0,0" />
                     </StackPanel>
 
                     <!-- 右側コントロール -->
@@ -168,6 +286,9 @@
                         <Button x:Name="BtnLoadSubEn" Style="{StaticResource MediaButton}"
                                 Content="🇺🇸" ToolTip="英語字幕を読み込む"
                                 Click="BtnLoadSubEn_Click" />
+                        <Button x:Name="BtnSnapshot" Style="{StaticResource MediaButton}"
+                                Content="📸" ToolTip="スナップショット (S)"
+                                Click="MenuSnapshot_Click" />
                         <Button x:Name="BtnVolume" Style="{StaticResource MediaButton}"
                                 Content="🔊" ToolTip="ミュート切替"
                                 Click="BtnVolume_Click" />
