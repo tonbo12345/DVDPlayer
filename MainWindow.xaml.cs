@@ -56,9 +56,16 @@ namespace DVDPlayer
             // LibVLC の初期化
             Core.Initialize();
             _libVLC = new LibVLC(
-                "--dvdnav",
-                "--no-video-title-show"
+                "--verbose=2",             // ログ出力
+                "--no-video-title-show",   // VLC タイトル非表示
+                "--disc-caching=3000"      // ディスクキャッシュ
             );
+
+            // LibVLC のログをコンソールに出力（デバッグ用）
+            _libVLC.Log += (s, logArgs) =>
+            {
+                System.Diagnostics.Debug.WriteLine($"[VLC] {logArgs.FormattedLog}");
+            };
 
             _mediaPlayer = new VlcMediaPlayer(_libVLC);
             VideoView.MediaPlayer = _mediaPlayer;
@@ -171,45 +178,92 @@ namespace DVDPlayer
             try
             {
                 var discType = DvdManager.DetectDiscType(driveLetter);
-                var mediaUri = DvdManager.GetMediaUri(driveLetter, discType);
-                _currentMediaKey = mediaUri;
+                _currentMediaKey = $"disc:{driveLetter}";
 
-                // LibVLC の Media を FromLocation で作成（dvd:// / bluray:// スキーム対応）
-                var media = new Media(_libVLC, mediaUri, FromType.FromLocation);
+                // ドライブパスの正規化
+                var normalizedDrive = driveLetter.TrimEnd('\\', '/');
+                if (!normalizedDrive.EndsWith(':')) normalizedDrive += ":";
 
-                // Blu-ray の場合、追加オプションを設定
+                // 方式1: dvd:// / bluray:// URI を試行
+                // 方式2: 直接パスを指定
+                // 方式3: VIDEO_TS / BDMV フォルダを直接指定
+                var urisToTry = new List<(string uri, FromType fromType, string description)>();
+
                 if (discType == DiscType.BluRay)
                 {
-                    media.AddOption(":disc-caching=300");
+                    urisToTry.Add(($"bluray:///{normalizedDrive}/", FromType.FromLocation, "Blu-ray URI"));
+                    var bdmvPath = System.IO.Path.Combine(normalizedDrive + "\\", "BDMV");
+                    urisToTry.Add((bdmvPath, FromType.FromPath, "BDMV フォルダパス"));
+                }
+                else
+                {
+                    urisToTry.Add(($"dvd:///{normalizedDrive}/", FromType.FromLocation, "DVD URI"));
+                    var videoTsPath = System.IO.Path.Combine(normalizedDrive + "\\", "VIDEO_TS");
+                    urisToTry.Add((videoTsPath, FromType.FromPath, "VIDEO_TS フォルダパス"));
                 }
 
-                // エラーイベントのハンドリング
+                // 直接ドライブパスも追加
+                urisToTry.Add((normalizedDrive + "\\", FromType.FromPath, "ドライブ直接パス"));
+
+                // タイトルバーに状態を表示
+                Title = $"DVD Player - {(discType == DiscType.BluRay ? "Blu-ray" : "DVD")} 読み込み中...";
+
+                TryPlayUris(urisToTry, 0, discType);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"ディスクの再生に失敗しました:\n{ex.Message}\n\nドライブ: {driveLetter}",
+                    "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                Title = "DVD Player - Dual Subtitles";
+            }
+        }
+
+        /// <summary>
+        /// 複数の URI を順番に試行して再生する
+        /// </summary>
+        private void TryPlayUris(List<(string uri, FromType fromType, string description)> uris, int index, DiscType discType)
+        {
+            if (_libVLC == null || _mediaPlayer == null) return;
+            if (index >= uris.Count)
+            {
+                MessageBox.Show(
+                    "すべての再生方式を試行しましたが、ディスクを再生できませんでした。\n\n" +
+                    "考えられる原因:\n" +
+                    "• Blu-ray ディスクの AACS 暗号化\n" +
+                    "• ディスクが破損している\n" +
+                    "• VLC でこのディスクが再生できるか確認してください",
+                    "再生エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                Title = "DVD Player - Dual Subtitles";
+                return;
+            }
+
+            var (uri, fromType, description) = uris[index];
+            System.Diagnostics.Debug.WriteLine($"[PlayDisc] 試行 {index + 1}/{uris.Count}: {description} -> {uri}");
+            Title = $"DVD Player - {description} で試行中...";
+
+            try
+            {
+                var media = new Media(_libVLC, uri, fromType);
+
+                // DVD メニューをスキップして本編を直接再生するオプション
+                if (discType == DiscType.DVD)
+                {
+                    media.AddOption(":dvd-angle=1");
+                    media.AddOption(":no-disc-menu");   // メニューをスキップ
+                }
+
+                bool errorOccurred = false;
                 media.StateChanged += (s, args) =>
                 {
-                    if (args.State == VLCState.Error)
+                    System.Diagnostics.Debug.WriteLine($"[VLC Media State] {args.State}");
+                    if (args.State == VLCState.Error && !errorOccurred)
                     {
+                        errorOccurred = true;
                         Dispatcher.Invoke(() =>
                         {
-                            // dvd:// がダメなら直接パスで再生を試みる
-                            var drivePath = driveLetter.TrimEnd('\\', '/');
-                            if (!drivePath.EndsWith(':')) drivePath += ":";
-                            drivePath += "\\";
-
-                            try
-                            {
-                                var fallbackMedia = new Media(_libVLC!, drivePath, FromType.FromPath);
-                                _mediaPlayer!.Media = fallbackMedia;
-                                _mediaPlayer.Play();
-                            }
-                            catch
-                            {
-                                MessageBox.Show(
-                                    $"ディスクの再生に失敗しました。\n" +
-                                    $"URI: {mediaUri}\n" +
-                                    $"ディスク種類: {discType}\n\n" +
-                                    $"VLC でこのディスクが再生できるか確認してください。",
-                                    "再生エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                            }
+                            System.Diagnostics.Debug.WriteLine($"[PlayDisc] {description} 失敗、次を試行...");
+                            // 次の URI を試行
+                            TryPlayUris(uris, index + 1, discType);
                         });
                     }
                 };
@@ -218,22 +272,36 @@ namespace DVDPlayer
                 _mediaPlayer.Play();
                 _subtitleSync?.Start();
 
-                // VLC の内蔵字幕を無効化
-                System.Threading.Tasks.Task.Delay(2000).ContinueWith(_ =>
+                // 5秒後に再生が開始されたかチェック
+                System.Threading.Tasks.Task.Delay(5000).ContinueWith(_ =>
                 {
                     Dispatcher.Invoke(() =>
                     {
-                        _mediaPlayer?.SetSpu(-1);
+                        if (_mediaPlayer != null && _mediaPlayer.IsPlaying)
+                        {
+                            // 再生成功！
+                            Title = "DVD Player - Dual Subtitles";
+                            _mediaPlayer.SetSpu(-1); // 内蔵字幕を無効化
+                            CheckResume(_currentMediaKey);
+                        }
+                        else if (!errorOccurred && _mediaPlayer != null && !_mediaPlayer.IsPlaying)
+                        {
+                            // 5秒経っても再生が始まらない場合、次を試行
+                            System.Diagnostics.Debug.WriteLine($"[PlayDisc] {description} タイムアウト、次を試行...");
+                            errorOccurred = true;
+                            System.Threading.Tasks.Task.Run(() => _mediaPlayer?.Stop());
+                            System.Threading.Tasks.Task.Delay(500).ContinueWith(__ =>
+                            {
+                                Dispatcher.Invoke(() => TryPlayUris(uris, index + 1, discType));
+                            });
+                        }
                     });
                 });
-
-                // レジューム確認
-                CheckResume(mediaUri);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"ディスクの再生に失敗しました:\n{ex.Message}\n\nドライブ: {driveLetter}",
-                    "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Diagnostics.Debug.WriteLine($"[PlayDisc] {description} 例外: {ex.Message}");
+                TryPlayUris(uris, index + 1, discType);
             }
         }
 
