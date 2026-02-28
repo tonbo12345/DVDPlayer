@@ -1,0 +1,186 @@
+﻿<Window x:Class="DVDPlayer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
+        Title="DVD Player - Dual Subtitles"
+        Width="1024" Height="700"
+        MinWidth="800" MinHeight="500"
+        Background="{StaticResource WindowBackground}"
+        WindowStartupLocation="CenterScreen"
+        Loaded="Window_Loaded"
+        Closing="Window_Closing"
+        KeyDown="Window_KeyDown">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />           <!-- ビデオ領域 -->
+            <RowDefinition Height="Auto" />         <!-- コントロールバー -->
+        </Grid.RowDefinitions>
+
+        <!-- ========== ビデオ領域 ========== -->
+        <Grid Grid.Row="0" Background="{StaticResource SurfaceBackground}"
+              MouseMove="VideoArea_MouseMove">
+
+            <!-- LibVLCSharp VideoView -->
+            <vlc:VideoView x:Name="VideoView">
+                <!-- VideoView 内に配置して airspace 問題を回避 -->
+                <Grid x:Name="SubtitleOverlay">
+                    <!-- 日本語字幕 (上部) -->
+                    <TextBlock x:Name="JapaneseSubtitle"
+                               VerticalAlignment="Top"
+                               HorizontalAlignment="Center"
+                               Margin="20,40,20,0"
+                               FontFamily="{StaticResource JapaneseFont}"
+                               FontSize="22"
+                               FontWeight="Bold"
+                               Foreground="White"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               MaxWidth="800">
+                        <TextBlock.Effect>
+                            <DropShadowEffect Color="Black"
+                                              BlurRadius="5"
+                                              ShadowDepth="2"
+                                              Opacity="0.9" />
+                        </TextBlock.Effect>
+                    </TextBlock>
+
+                    <!-- 英語字幕 (下部) -->
+                    <TextBlock x:Name="EnglishSubtitle"
+                               VerticalAlignment="Bottom"
+                               HorizontalAlignment="Center"
+                               Margin="20,0,20,80"
+                               FontFamily="{StaticResource EnglishFont}"
+                               FontSize="24"
+                               FontWeight="SemiBold"
+                               Foreground="White"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               MaxWidth="800">
+                        <TextBlock.Effect>
+                            <DropShadowEffect Color="Black"
+                                              BlurRadius="5"
+                                              ShadowDepth="2"
+                                              Opacity="0.9" />
+                        </TextBlock.Effect>
+                    </TextBlock>
+                </Grid>
+            </vlc:VideoView>
+
+            <!-- DVD未挿入時のメッセージ -->
+            <StackPanel x:Name="WelcomePanel"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        Visibility="Visible">
+                <TextBlock Text="🎬"
+                           FontSize="64"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,16" />
+                <TextBlock Text="DVD Player - Dual Subtitles"
+                           FontFamily="{StaticResource UIFont}"
+                           FontSize="24"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource PrimaryText}"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,8" />
+                <TextBlock Text="DVDを挿入するか、ファイルメニューからメディアを開いてください"
+                           FontFamily="{StaticResource JapaneseFont}"
+                           FontSize="14"
+                           Foreground="{StaticResource SecondaryText}"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ========== コントロールバー ========== -->
+        <Border x:Name="ControlBar" Grid.Row="1"
+                Background="{StaticResource ControlBarBackground}"
+                Padding="12,8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />  <!-- シークバー -->
+                    <RowDefinition Height="Auto" />  <!-- コントロール -->
+                </Grid.RowDefinitions>
+
+                <!-- シークバー -->
+                <Slider x:Name="SeekBar" Grid.Row="0"
+                        Style="{StaticResource SeekBarStyle}"
+                        Margin="0,0,0,4"
+                        ValueChanged="SeekBar_ValueChanged"
+                        PreviewMouseDown="SeekBar_PreviewMouseDown"
+                        PreviewMouseUp="SeekBar_PreviewMouseUp" />
+
+                <!-- コントロール行 -->
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />   <!-- 再生コントロール -->
+                        <ColumnDefinition Width="Auto" />   <!-- 時間表示 -->
+                        <ColumnDefinition Width="*" />       <!-- スペーサー -->
+                        <ColumnDefinition Width="Auto" />   <!-- 字幕・音量・フルスクリーン -->
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 再生コントロール -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <Button x:Name="BtnPrevChapter" Style="{StaticResource MediaButton}"
+                                Content="⏮" ToolTip="前のチャプター"
+                                Click="BtnPrevChapter_Click" />
+                        <Button x:Name="BtnPlayPause" Style="{StaticResource PlayButton}"
+                                Content="▶" ToolTip="再生/一時停止"
+                                Click="BtnPlayPause_Click" />
+                        <Button x:Name="BtnNextChapter" Style="{StaticResource MediaButton}"
+                                Content="⏭" ToolTip="次のチャプター"
+                                Click="BtnNextChapter_Click" />
+                        <Button x:Name="BtnStop" Style="{StaticResource MediaButton}"
+                                Content="⏹" ToolTip="停止"
+                                Click="BtnStop_Click" />
+                    </StackPanel>
+
+                    <!-- 時間表示 -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                VerticalAlignment="Center" Margin="12,0">
+                        <TextBlock x:Name="TxtCurrentTime"
+                                   Text="00:00:00"
+                                   Foreground="{StaticResource SecondaryText}"
+                                   FontFamily="{StaticResource UIFont}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Text=" / "
+                                   Foreground="{StaticResource SecondaryText}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center" />
+                        <TextBlock x:Name="TxtTotalTime"
+                                   Text="00:00:00"
+                                   Foreground="{StaticResource SecondaryText}"
+                                   FontFamily="{StaticResource UIFont}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <!-- 右側コントロール -->
+                    <StackPanel Grid.Column="3" Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <Button x:Name="BtnOpenDvd" Style="{StaticResource MediaButton}"
+                                Content="💿" ToolTip="DVDを開く"
+                                Click="BtnOpenDvd_Click" />
+                        <Button x:Name="BtnLoadSubJp" Style="{StaticResource MediaButton}"
+                                Content="🇯🇵" ToolTip="日本語字幕を読み込む"
+                                Click="BtnLoadSubJp_Click" />
+                        <Button x:Name="BtnLoadSubEn" Style="{StaticResource MediaButton}"
+                                Content="🇺🇸" ToolTip="英語字幕を読み込む"
+                                Click="BtnLoadSubEn_Click" />
+                        <Button x:Name="BtnVolume" Style="{StaticResource MediaButton}"
+                                Content="🔊" ToolTip="ミュート切替"
+                                Click="BtnVolume_Click" />
+                        <Slider x:Name="VolumeBar"
+                                Style="{StaticResource VolumeBarStyle}"
+                                Value="80"
+                                ValueChanged="VolumeBar_ValueChanged" />
+                        <Button x:Name="BtnFullScreen" Style="{StaticResource MediaButton}"
+                                Content="⛶" ToolTip="フルスクリーン"
+                                Click="BtnFullScreen_Click" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

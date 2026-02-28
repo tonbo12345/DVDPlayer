@@ -1,0 +1,92 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ========== カラーパレット (Catppuccin Mocha ベース) ========== -->
+
+    <!-- 背景色 -->
+    <SolidColorBrush x:Key="WindowBackground" Color="#1E1E2E" />
+    <SolidColorBrush x:Key="ControlBarBackground" Color="#CC181825" />
+    <SolidColorBrush x:Key="ControlBarBackgroundHover" Color="#313244" />
+    <SolidColorBrush x:Key="SurfaceBackground" Color="#11111B" />
+
+    <!-- テキスト色 -->
+    <SolidColorBrush x:Key="PrimaryText" Color="#CDD6F4" />
+    <SolidColorBrush x:Key="SecondaryText" Color="#A6ADC8" />
+    <SolidColorBrush x:Key="AccentText" Color="#89B4FA" />
+
+    <!-- アクセント色 -->
+    <SolidColorBrush x:Key="AccentColor" Color="#89B4FA" />
+    <SolidColorBrush x:Key="AccentColorHover" Color="#B4D0FB" />
+    <SolidColorBrush x:Key="AccentColorPressed" Color="#7BA2E0" />
+
+    <!-- ボーダー -->
+    <SolidColorBrush x:Key="BorderColor" Color="#45475A" />
+    <CornerRadius x:Key="ControlCornerRadius">8</CornerRadius>
+    <CornerRadius x:Key="ButtonCornerRadius">6</CornerRadius>
+
+    <!-- フォント -->
+    <FontFamily x:Key="UIFont">Segoe UI Variable, Segoe UI, Yu Gothic UI</FontFamily>
+    <FontFamily x:Key="JapaneseFont">Yu Gothic UI, Meiryo, MS Gothic</FontFamily>
+    <FontFamily x:Key="EnglishFont">Segoe UI, Arial, Helvetica</FontFamily>
+
+    <!-- ========== メディアボタンスタイル ========== -->
+    <Style x:Key="MediaButton" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource PrimaryText}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Width" Value="40" />
+        <Setter Property="Height" Value="40" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="ButtonBorder"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="{StaticResource ButtonCornerRadius}"
+                            Padding="4">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="ButtonBorder"
+                                    Property="Background"
+                                    Value="{StaticResource ControlBarBackgroundHover}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="ButtonBorder"
+                                    Property="Background"
+                                    Value="{StaticResource AccentColorPressed}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 大きな再生ボタン -->
+    <Style x:Key="PlayButton" TargetType="Button" BasedOn="{StaticResource MediaButton}">
+        <Setter Property="Width" Value="48" />
+        <Setter Property="Height" Value="48" />
+        <Setter Property="FontSize" Value="22" />
+    </Style>
+
+    <!-- ========== シークバースタイル ========== -->
+    <Style x:Key="SeekBarStyle" TargetType="Slider">
+        <Setter Property="Minimum" Value="0" />
+        <Setter Property="Maximum" Value="100" />
+        <Setter Property="Height" Value="20" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- ========== ボリュームバースタイル ========== -->
+    <Style x:Key="VolumeBarStyle" TargetType="Slider">
+        <Setter Property="Minimum" Value="0" />
+        <Setter Property="Maximum" Value="100" />
+        <Setter Property="Width" Value="80" />
+        <Setter Property="Height" Value="20" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+</ResourceDictionary>
