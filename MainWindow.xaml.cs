@@ -131,35 +131,45 @@ namespace DVDPlayer
 
         #endregion
 
-        #region DVD 操作
+        #region DVD / Blu-ray 操作
 
         private void AutoDetectDvd()
         {
-            var dvdDrive = DvdManager.FindDvdWithMedia();
-            if (dvdDrive != null)
+            var drive = DvdManager.FindDriveWithMedia();
+            if (drive != null)
             {
+                var discType = DvdManager.DetectDiscType(drive.Name);
+                var discLabel = discType == DiscType.BluRay ? "Blu-ray" : "DVD";
+
+                // ドライブのボリュームラベルを取得
+                string volumeLabel = "";
+                try { volumeLabel = drive.VolumeLabel; } catch { }
+                var labelStr = string.IsNullOrEmpty(volumeLabel) ? "" : $" ({volumeLabel})";
+
                 var result = MessageBox.Show(
-                    $"DVD が検出されました: {dvdDrive.Name}\n再生しますか？",
-                    "DVD 検出",
+                    $"{discLabel} が検出されました: {drive.Name}{labelStr}\n再生しますか？",
+                    $"{discLabel} 検出",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Question);
 
                 if (result == MessageBoxResult.Yes)
                 {
-                    PlayDvd(dvdDrive.Name.TrimEnd('\\'));
+                    PlayDisc(drive.Name.TrimEnd('\\'));
                 }
             }
         }
 
-        private void PlayDvd(string driveLetter)
+        private void PlayDisc(string driveLetter)
         {
             if (_libVLC == null || _mediaPlayer == null) return;
 
             try
             {
-                var dvdUri = DvdManager.GetDvdUri(driveLetter);
-                _currentMediaKey = dvdUri;
-                var media = new Media(_libVLC, new Uri(dvdUri));
+                var discType = DvdManager.DetectDiscType(driveLetter);
+                var mediaUri = DvdManager.GetMediaUri(driveLetter, discType);
+                _currentMediaKey = mediaUri;
+
+                var media = new Media(_libVLC, new Uri(mediaUri));
                 _mediaPlayer.Media = media;
                 _mediaPlayer.Play();
                 _subtitleSync?.Start();
@@ -174,11 +184,11 @@ namespace DVDPlayer
                 });
 
                 // レジューム確認
-                CheckResume(dvdUri);
+                CheckResume(mediaUri);
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"DVD の再生に失敗しました:\n{ex.Message}",
+                MessageBox.Show($"ディスクの再生に失敗しました:\n{ex.Message}",
                     "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -581,18 +591,18 @@ namespace DVDPlayer
             }
             else if (dvdDrives.Count == 1)
             {
-                PlayDvd(dvdDrives[0].Name.TrimEnd('\\'));
+                PlayDisc(dvdDrives[0].Name.TrimEnd('\\'));
             }
             else
             {
-                var dvdWithMedia = DvdManager.FindDvdWithMedia();
-                if (dvdWithMedia != null)
+                var driveWithMedia = DvdManager.FindDriveWithMedia();
+                if (driveWithMedia != null)
                 {
-                    PlayDvd(dvdWithMedia.Name.TrimEnd('\\'));
+                    PlayDisc(driveWithMedia.Name.TrimEnd('\\'));
                 }
                 else
                 {
-                    PlayDvd(dvdDrives[0].Name.TrimEnd('\\'));
+                    PlayDisc(dvdDrives[0].Name.TrimEnd('\\'));
                 }
             }
         }

@@ -3,12 +3,12 @@ using System.IO;
 namespace DVDPlayer.Services
 {
     /// <summary>
-    /// DVD ドライブの検出と DVD メディアの管理を行うサービス
+    /// DVD / Blu-ray ドライブの検出とメディア管理を行うサービス
     /// </summary>
     public class DvdManager
     {
         /// <summary>
-        /// システム上の DVD/CD-ROM ドライブの一覧を取得する
+        /// システム上の CD/DVD/Blu-ray ドライブの一覧を取得する
         /// </summary>
         public static List<DriveInfo> GetDvdDrives()
         {
@@ -18,18 +18,20 @@ namespace DVDPlayer.Services
         }
 
         /// <summary>
-        /// DVD メディアが挿入されているドライブを検出する
-        /// VIDEO_TS フォルダの存在で DVD ディスクかどうかを判定
+        /// メディアが挿入されているドライブを検出する
+        /// DVD (VIDEO_TS) と Blu-ray (BDMV) の両方をチェック
         /// </summary>
-        public static DriveInfo? FindDvdWithMedia()
+        public static DriveInfo? FindDriveWithMedia()
         {
             return GetDvdDrives()
                 .FirstOrDefault(d =>
                 {
                     try
                     {
-                        return d.IsReady &&
-                               Directory.Exists(Path.Combine(d.RootDirectory.FullName, "VIDEO_TS"));
+                        if (!d.IsReady) return false;
+                        var root = d.RootDirectory.FullName;
+                        return Directory.Exists(Path.Combine(root, "VIDEO_TS"))
+                            || Directory.Exists(Path.Combine(root, "BDMV"));
                     }
                     catch
                     {
@@ -39,7 +41,36 @@ namespace DVDPlayer.Services
         }
 
         /// <summary>
-        /// 指定されたドライブレターが有効な DVD ドライブかチェックする
+        /// ディスクの種類を判定する
+        /// </summary>
+        public static DiscType DetectDiscType(string driveLetter)
+        {
+            try
+            {
+                var root = driveLetter.TrimEnd('\\', '/');
+                if (!root.EndsWith(':')) root += ":";
+                root += "\\";
+
+                if (Directory.Exists(Path.Combine(root, "BDMV")))
+                    return DiscType.BluRay;
+                if (Directory.Exists(Path.Combine(root, "VIDEO_TS")))
+                    return DiscType.DVD;
+
+                // ドライブにメディアがあるがフォルダ構造が不明な場合
+                var drive = new DriveInfo(driveLetter.TrimEnd('\\', '/'));
+                if (drive.IsReady)
+                    return DiscType.Unknown;
+
+                return DiscType.None;
+            }
+            catch
+            {
+                return DiscType.None;
+            }
+        }
+
+        /// <summary>
+        /// 指定されたドライブレターが有効な CD/DVD/BD ドライブかチェックする
         /// </summary>
         public static bool IsDvdDrive(string driveLetter)
         {
@@ -55,19 +86,36 @@ namespace DVDPlayer.Services
         }
 
         /// <summary>
-        /// DVD ドライブのパスから LibVLC 用の dvd:// URI に変換する
+        /// ドライブレターから LibVLC 用の URI に変換する
+        /// DVD → dvd:///D:  Blu-ray → bluray:///D:
         /// </summary>
-        /// <param name="driveLetter">ドライブレター (例: "D:")</param>
-        /// <returns>dvd:///D: 形式の URI</returns>
-        public static string GetDvdUri(string driveLetter)
+        public static string GetMediaUri(string driveLetter, DiscType discType)
         {
-            // ドライブレターの正規化
             driveLetter = driveLetter.TrimEnd('\\', '/');
             if (!driveLetter.EndsWith(':'))
-            {
                 driveLetter += ":";
-            }
-            return $"dvd:///{driveLetter}";
+
+            return discType switch
+            {
+                DiscType.BluRay => $"bluray:///{driveLetter}",
+                DiscType.DVD => $"dvd:///{driveLetter}",
+                _ => $"dvd:///{driveLetter}" // デフォルトは DVD として試行
+            };
         }
+
+        /// <summary>後方互換性のため残す</summary>
+        public static string GetDvdUri(string driveLetter)
+        {
+            return GetMediaUri(driveLetter, DiscType.DVD);
+        }
+    }
+
+    /// <summary>ディスクの種類</summary>
+    public enum DiscType
+    {
+        None,
+        DVD,
+        BluRay,
+        Unknown
     }
 }
