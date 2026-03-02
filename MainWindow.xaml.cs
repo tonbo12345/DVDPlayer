@@ -175,129 +175,86 @@ namespace DVDPlayer
         {
             if (_libVLC == null || _mediaPlayer == null) return;
 
-            try
+            // ドライブパスの正規化
+            var normalizedDrive = driveLetter.TrimEnd('\\', '/');
+            if (!normalizedDrive.EndsWith(':')) normalizedDrive += ":";
+
+            var discType = DvdManager.DetectDiscType(normalizedDrive);
+            _currentMediaKey = $"disc:{normalizedDrive}";
+
+            // すべてのディスク操作をバックグラウンドスレッドで実行（UIフリーズ防止）
+            Title = "DVD Player - ディスク読み込み中...";
+            WelcomePanel.Visibility = Visibility.Collapsed;
+
+            System.Threading.Tasks.Task.Run(() =>
             {
-                var discType = DvdManager.DetectDiscType(driveLetter);
-                _currentMediaKey = $"disc:{driveLetter}";
-
-                // ドライブパスの正規化
-                var normalizedDrive = driveLetter.TrimEnd('\\', '/');
-                if (!normalizedDrive.EndsWith(':')) normalizedDrive += ":";
-                var drivePath = normalizedDrive + "\\";
-
-                // 複数の方式を試行する
-                // ISO マウントの場合、dvd:// スキーム + 直接フォルダパスが最も確実
-                var urisToTry = new List<(string uri, FromType fromType, string description)>();
-
-                if (discType == DiscType.BluRay)
+                try
                 {
-                    urisToTry.Add(($"bluray:///{drivePath}", FromType.FromLocation, "Blu-ray URI"));
-                    urisToTry.Add(($"bluray:///{drivePath}BDMV", FromType.FromLocation, "BDMV URI"));
-                }
-                else
-                {
-                    // DVD: VIDEO_TS を dvd:// スキームで指定（ISO マウント対応）
-                    urisToTry.Add(($"dvd:///{drivePath}VIDEO_TS", FromType.FromLocation, "DVD VIDEO_TS URI"));
-                    urisToTry.Add(($"dvd:///{drivePath}", FromType.FromLocation, "DVD ドライブ URI"));
-                    urisToTry.Add(($"dvd://{normalizedDrive}", FromType.FromLocation, "DVD シンプル URI"));
-                }
-
-                Title = $"DVD Player - {(discType == DiscType.BluRay ? "Blu-ray" : "DVD")} 読み込み中...";
-                TryPlayUris(urisToTry, 0, discType);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"ディスクの再生に失敗しました:\n{ex.Message}\n\nドライブ: {driveLetter}",
-                    "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                Title = "DVD Player - Dual Subtitles";
-            }
-        }
-
-        /// <summary>
-        /// 複数の URI を順番に試行して再生する
-        /// </summary>
-        private void TryPlayUris(List<(string uri, FromType fromType, string description)> uris, int index, DiscType discType)
-        {
-            if (_libVLC == null || _mediaPlayer == null) return;
-            if (index >= uris.Count)
-            {
-                MessageBox.Show(
-                    "すべての再生方式を試行しましたが、ディスクを再生できませんでした。\n\n" +
-                    "考えられる原因:\n" +
-                    "• Blu-ray ディスクの AACS 暗号化\n" +
-                    "• ディスクが破損している\n" +
-                    "• VLC でこのディスクが再生できるか確認してください",
-                    "再生エラー", MessageBoxButton.OK, MessageBoxImage.Error);
-                Title = "DVD Player - Dual Subtitles";
-                return;
-            }
-
-            var (uri, fromType, description) = uris[index];
-            System.Diagnostics.Debug.WriteLine($"[PlayDisc] 試行 {index + 1}/{uris.Count}: {description} -> {uri}");
-            Title = $"DVD Player - {description} で試行中...";
-
-            try
-            {
-                var media = new Media(_libVLC, uri, fromType);
-
-                // DVD メニューをスキップして本編を直接再生するオプション
-                if (discType == DiscType.DVD)
-                {
-                    media.AddOption(":dvd-angle=1");
-                    media.AddOption(":no-disc-menu");   // メニューをスキップ
-                }
-
-                bool errorOccurred = false;
-                media.StateChanged += (s, args) =>
-                {
-                    System.Diagnostics.Debug.WriteLine($"[VLC Media State] {args.State}");
-                    if (args.State == VLCState.Error && !errorOccurred)
+                    // URI を構築
+                    string mediaUri;
+                    if (discType == DiscType.BluRay)
                     {
-                        errorOccurred = true;
-                        Dispatcher.Invoke(() =>
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[PlayDisc] {description} 失敗、次を試行...");
-                            // 次の URI を試行
-                            TryPlayUris(uris, index + 1, discType);
-                        });
+                        mediaUri = $"bluray:///{normalizedDrive}/";
                     }
-                };
-
-                _mediaPlayer.Media = media;
-                _mediaPlayer.Play();
-                _subtitleSync?.Start();
-
-                // 5秒後に再生が開始されたかチェック
-                System.Threading.Tasks.Task.Delay(5000).ContinueWith(_ =>
-                {
-                    Dispatcher.Invoke(() =>
+                    else
                     {
-                        if (_mediaPlayer != null && _mediaPlayer.IsPlaying)
+                        mediaUri = $"dvd:///{normalizedDrive}/";
+                    }
+
+                    System.Diagnostics.Debug.WriteLine($"[PlayDisc] URI: {mediaUri}");
+
+                    var media = new Media(_libVLC!, mediaUri, FromType.FromLocation);
+
+                    // BeginInvoke を使用（Invoke はデッドロックの原因になる）
+                    Dispatcher.BeginInvoke(() =>
+                    {
+                        _mediaPlayer!.Media = media;
+                        _mediaPlayer.Play();
+                        _subtitleSync?.Start();
+                        Title = "DVD Player - 再生開始...";
+                    });
+
+                    // 再生開始を待つ（最大10秒）
+                    for (int i = 0; i < 40; i++)
+                    {
+                        System.Threading.Thread.Sleep(250);
+                        if (_mediaPlayer!.IsPlaying)
                         {
                             // 再生成功！
-                            Title = "DVD Player - Dual Subtitles";
-                            _mediaPlayer.SetSpu(-1); // 内蔵字幕を無効化
-                            CheckResume(_currentMediaKey);
-                        }
-                        else if (!errorOccurred && _mediaPlayer != null && !_mediaPlayer.IsPlaying)
-                        {
-                            // 5秒経っても再生が始まらない場合、次を試行
-                            System.Diagnostics.Debug.WriteLine($"[PlayDisc] {description} タイムアウト、次を試行...");
-                            errorOccurred = true;
-                            System.Threading.Tasks.Task.Run(() => _mediaPlayer?.Stop());
-                            System.Threading.Tasks.Task.Delay(500).ContinueWith(__ =>
+                            Dispatcher.BeginInvoke(() =>
                             {
-                                Dispatcher.Invoke(() => TryPlayUris(uris, index + 1, discType));
+                                Title = "DVD Player - Dual Subtitles";
+                                _mediaPlayer?.SetSpu(-1);
                             });
+                            return;
                         }
+                    }
+
+                    // 10秒経っても再生が始まらない
+                    Dispatcher.BeginInvoke(() =>
+                    {
+                        Title = "DVD Player - Dual Subtitles";
+                        WelcomePanel.Visibility = Visibility.Visible;
+                        MessageBox.Show(
+                            "ディスクを再生できませんでした。\n\n" +
+                            "ISO ファイルの場合:\n" +
+                            "右クリック → 「メディアファイルを開く」から\n" +
+                            "ISO ファイルを直接選択してください。\n\n" +
+                            $"試行した URI: {mediaUri}",
+                            "再生エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
                     });
-                });
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[PlayDisc] {description} 例外: {ex.Message}");
-                TryPlayUris(uris, index + 1, discType);
-            }
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.BeginInvoke(() =>
+                    {
+                        Title = "DVD Player - Dual Subtitles";
+                        WelcomePanel.Visibility = Visibility.Visible;
+                        MessageBox.Show($"ディスクの再生に失敗しました:\n{ex.Message}",
+                            "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                    });
+                }
+            });
         }
 
         private void PlayMedia(string path)
