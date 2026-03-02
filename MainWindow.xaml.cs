@@ -56,12 +56,8 @@ namespace DVDPlayer
             // LibVLC の初期化
             Core.Initialize();
             _libVLC = new LibVLC(
-                "--verbose=2",             // ログ出力
                 "--no-video-title-show",   // VLC タイトル非表示
-                "--disc-caching=3000",     // ディスクキャッシュ
-                "--aout=mmdevice",         // Windows 標準オーディオ出力
-                "--stereo-mode=0",         // ステレオダウンミックス
-                "--sout-transcode-audio-channels=2"  // 2chに変換
+                "--disc-caching=3000"      // ディスクキャッシュ
             );
 
             // LibVLC のログをコンソールに出力（デバッグ用）
