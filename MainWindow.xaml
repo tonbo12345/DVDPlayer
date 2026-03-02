@@ -10,6 +10,70 @@
         Loaded="Window_Loaded"
         Closing="Window_Closing"
         KeyDown="Window_KeyDown">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/DarkTheme.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <!-- 右クリックコンテキストメニュー（Windowレベルで定義） -->
+    <Window.ContextMenu>
+        <ContextMenu x:Name="VideoContextMenu"
+                     Background="#2A2A3E" Foreground="#CDD6F4"
+                     BorderBrush="#45475A" BorderThickness="1">
+            <MenuItem Header="再生/一時停止" Click="BtnPlayPause_Click" InputGestureText="Space" />
+            <MenuItem Header="停止" Click="BtnStop_Click" />
+            <MenuItem Header="続きから再生" Click="MenuResume_Click" />
+            <Separator />
+            <MenuItem Header="チャプター">
+                <MenuItem Header="前のチャプター" Click="BtnPrevChapter_Click" />
+                <MenuItem Header="次のチャプター" Click="BtnNextChapter_Click" />
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="&#x1F501; A-B リピート">
+                <MenuItem x:Name="MenuSetA" Header="A地点を設定" Click="MenuSetA_Click" InputGestureText="[" />
+                <MenuItem x:Name="MenuSetB" Header="B地点を設定" Click="MenuSetB_Click" InputGestureText="]" />
+                <MenuItem Header="リピート解除" Click="MenuClearAB_Click" InputGestureText="\" />
+            </MenuItem>
+            <MenuItem Header="⏩ 再生速度">
+                <MenuItem Header="0.5x (超スロー)" Click="MenuSpeed_Click" Tag="0.5" />
+                <MenuItem Header="0.75x (スロー)" Click="MenuSpeed_Click" Tag="0.75" />
+                <MenuItem Header="1.0x (通常)" Click="MenuSpeed_Click" Tag="1.0" />
+                <MenuItem Header="1.25x" Click="MenuSpeed_Click" Tag="1.25" />
+                <MenuItem Header="1.5x" Click="MenuSpeed_Click" Tag="1.5" />
+                <MenuItem Header="2.0x (倍速)" Click="MenuSpeed_Click" Tag="2.0" />
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="字幕 (主 - 日本語)">
+                <MenuItem Header="字幕ファイルを読み込む..." Click="BtnLoadSubJp_Click" />
+                <MenuItem Header="字幕を非表示" Click="MenuHideJpSub_Click" />
+                <Separator />
+                <MenuItem Header="フォント大 (28pt)" Click="MenuJpFontSize_Click" Tag="28" />
+                <MenuItem Header="フォント中 (22pt)" Click="MenuJpFontSize_Click" Tag="22" />
+                <MenuItem Header="フォント小 (16pt)" Click="MenuJpFontSize_Click" Tag="16" />
+            </MenuItem>
+            <MenuItem Header="字幕 (副 - 英語)">
+                <MenuItem Header="字幕ファイルを読み込む..." Click="BtnLoadSubEn_Click" />
+                <MenuItem Header="字幕を非表示" Click="MenuHideEnSub_Click" />
+                <Separator />
+                <MenuItem Header="フォント大 (30pt)" Click="MenuEnFontSize_Click" Tag="30" />
+                <MenuItem Header="フォント中 (24pt)" Click="MenuEnFontSize_Click" Tag="24" />
+                <MenuItem Header="フォント小 (18pt)" Click="MenuEnFontSize_Click" Tag="18" />
+            </MenuItem>
+            <Separator />
+            <MenuItem x:Name="MenuAudioTrack" Header="&#x1F50A; 音声トラック" SubmenuOpened="MenuAudioTrack_SubmenuOpened">
+                <MenuItem Header="(再生中に選択可能)" IsEnabled="False" />
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="&#x1F4F8; スナップショット保存" Click="MenuSnapshot_Click" InputGestureText="S" />
+            <MenuItem Header="&#x1F4BF; DVDを開く..." Click="BtnOpenDvd_Click" />
+            <MenuItem Header="&#x1F4C4; メディアファイルを開く..." Click="MenuOpenFile_Click" />
+            <Separator />
+            <MenuItem Header="⛶ フルスクリーン" Click="BtnFullScreen_Click" InputGestureText="F" />
+        </ContextMenu>
+    </Window.ContextMenu>
 
     <Grid>
         <Grid.RowDefinitions>
@@ -19,78 +83,7 @@
 
         <!-- ========== ビデオ領域 ========== -->
         <Grid Grid.Row="0" Background="{StaticResource SurfaceBackground}"
-              MouseMove="VideoArea_MouseMove"
-              MouseRightButtonUp="VideoArea_MouseRightButtonUp">
-
-            <!-- 右クリック コンテキストメニュー（ビデオ領域全体で有効） -->
-            <Grid.ContextMenu>
-                <ContextMenu x:Name="VideoContextMenu"
-                             Background="#2A2A3E" Foreground="#CDD6F4"
-                             BorderBrush="#45475A" BorderThickness="1">
-                    <!-- 再生コントロール -->
-                    <MenuItem Header="再生/一時停止" Click="BtnPlayPause_Click" InputGestureText="Space" />
-                    <MenuItem Header="停止" Click="BtnStop_Click" />
-                    <MenuItem Header="続きから再生" Click="MenuResume_Click" />
-                    <Separator />
-
-                    <!-- チャプター -->
-                    <MenuItem Header="チャプター">
-                        <MenuItem Header="前のチャプター" Click="BtnPrevChapter_Click" />
-                        <MenuItem Header="次のチャプター" Click="BtnNextChapter_Click" />
-                    </MenuItem>
-                    <Separator />
-
-                    <!-- 英語学習機能 -->
-                    <MenuItem Header="&#x1F501; A-B リピート">
-                        <MenuItem x:Name="MenuSetA" Header="A地点を設定" Click="MenuSetA_Click" InputGestureText="[" />
-                        <MenuItem x:Name="MenuSetB" Header="B地点を設定" Click="MenuSetB_Click" InputGestureText="]" />
-                        <MenuItem Header="リピート解除" Click="MenuClearAB_Click" InputGestureText="\" />
-                    </MenuItem>
-
-                    <MenuItem Header="⏩ 再生速度">
-                        <MenuItem Header="0.5x (超スロー)" Click="MenuSpeed_Click" Tag="0.5" />
-                        <MenuItem Header="0.75x (スロー)" Click="MenuSpeed_Click" Tag="0.75" />
-                        <MenuItem Header="1.0x (通常)" Click="MenuSpeed_Click" Tag="1.0" />
-                        <MenuItem Header="1.25x" Click="MenuSpeed_Click" Tag="1.25" />
-                        <MenuItem Header="1.5x" Click="MenuSpeed_Click" Tag="1.5" />
-                        <MenuItem Header="2.0x (倍速)" Click="MenuSpeed_Click" Tag="2.0" />
-                    </MenuItem>
-                    <Separator />
-
-                    <!-- 字幕 -->
-                    <MenuItem Header="字幕 (主 - 日本語)">
-                        <MenuItem Header="字幕ファイルを読み込む..." Click="BtnLoadSubJp_Click" />
-                        <MenuItem Header="字幕を非表示" Click="MenuHideJpSub_Click" />
-                        <Separator />
-                        <MenuItem Header="フォント大 (28pt)" Click="MenuJpFontSize_Click" Tag="28" />
-                        <MenuItem Header="フォント中 (22pt)" Click="MenuJpFontSize_Click" Tag="22" />
-                        <MenuItem Header="フォント小 (16pt)" Click="MenuJpFontSize_Click" Tag="16" />
-                    </MenuItem>
-
-                    <MenuItem Header="字幕 (副 - 英語)">
-                        <MenuItem Header="字幕ファイルを読み込む..." Click="BtnLoadSubEn_Click" />
-                        <MenuItem Header="字幕を非表示" Click="MenuHideEnSub_Click" />
-                        <Separator />
-                        <MenuItem Header="フォント大 (30pt)" Click="MenuEnFontSize_Click" Tag="30" />
-                        <MenuItem Header="フォント中 (24pt)" Click="MenuEnFontSize_Click" Tag="24" />
-                        <MenuItem Header="フォント小 (18pt)" Click="MenuEnFontSize_Click" Tag="18" />
-                    </MenuItem>
-                    <Separator />
-
-                    <!-- 音声トラック -->
-                    <MenuItem x:Name="MenuAudioTrack" Header="🔊 音声トラック" SubmenuOpened="MenuAudioTrack_SubmenuOpened">
-                        <MenuItem Header="(再生中に選択可能)" IsEnabled="False" />
-                    </MenuItem>
-                    <Separator />
-
-                    <!-- その他 -->
-                    <MenuItem Header="&#x1F4F8; スナップショット保存" Click="MenuSnapshot_Click" InputGestureText="S" />
-                    <MenuItem Header="&#x1F4BF; DVDを開く..." Click="BtnOpenDvd_Click" />
-                    <MenuItem Header="&#x1F4C4; メディアファイルを開く..." Click="MenuOpenFile_Click" />
-                    <Separator />
-                    <MenuItem Header="⛶ フルスクリーン" Click="BtnFullScreen_Click" InputGestureText="F" />
-                </ContextMenu>
-            </Grid.ContextMenu>
+              MouseMove="VideoArea_MouseMove">
 
             <!-- LibVLCSharp VideoView -->
             <vlc:VideoView x:Name="VideoView">
