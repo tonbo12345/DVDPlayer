@@ -58,7 +58,10 @@ namespace DVDPlayer
             _libVLC = new LibVLC(
                 "--verbose=2",             // ログ出力
                 "--no-video-title-show",   // VLC タイトル非表示
-                "--disc-caching=3000"      // ディスクキャッシュ
+                "--disc-caching=3000",     // ディスクキャッシュ
+                "--aout=mmdevice",         // Windows 標準オーディオ出力
+                "--stereo-mode=0",         // ステレオダウンミックス
+                "--sout-transcode-audio-channels=2"  // 2chに変換
             );
 
             // LibVLC のログをコンソールに出力（デバッグ用）
@@ -976,6 +979,47 @@ namespace DVDPlayer
         private void VideoArea_MouseMove(object sender, MouseEventArgs e)
         {
             ControlBar.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>音声トラックメニューを動的に構築する</summary>
+        private void MenuAudioTrack_SubmenuOpened(object sender, RoutedEventArgs e)
+        {
+            if (_mediaPlayer == null || sender is not System.Windows.Controls.MenuItem menuItem) return;
+
+            menuItem.Items.Clear();
+
+            var trackDescription = _mediaPlayer.AudioTrackDescription;
+            var currentTrack = _mediaPlayer.AudioTrack;
+
+            if (trackDescription == null || trackDescription.Length == 0)
+            {
+                var noTrack = new System.Windows.Controls.MenuItem { Header = "(音声トラックなし)", IsEnabled = false };
+                menuItem.Items.Add(noTrack);
+                return;
+            }
+
+            foreach (var track in trackDescription)
+            {
+                var item = new System.Windows.Controls.MenuItem
+                {
+                    Header = $"{(track.Id == currentTrack ? "✓ " : "  ")}{track.Name} (ID: {track.Id})",
+                    Tag = track.Id,
+                    IsChecked = track.Id == currentTrack
+                };
+                item.Click += (s, args) =>
+                {
+                    if (s is System.Windows.Controls.MenuItem clickedItem && clickedItem.Tag is int trackId)
+                    {
+                        _mediaPlayer!.SetAudioTrack(trackId);
+                        Title = $"DVD Player - 音声トラック: {trackId}";
+                        System.Threading.Tasks.Task.Delay(2000).ContinueWith(_ =>
+                        {
+                            Dispatcher.BeginInvoke(() => Title = "DVD Player - Dual Subtitles");
+                        });
+                    }
+                };
+                menuItem.Items.Add(item);
+            }
         }
 
         private void VideoArea_MouseRightButtonUp(object sender, MouseButtonEventArgs e)

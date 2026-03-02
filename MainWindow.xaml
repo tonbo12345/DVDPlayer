@@ -77,6 +77,12 @@
                     </MenuItem>
                     <Separator />
 
+                    <!-- 音声トラック -->
+                    <MenuItem x:Name="MenuAudioTrack" Header="🔊 音声トラック" SubmenuOpened="MenuAudioTrack_SubmenuOpened">
+                        <MenuItem Header="(再生中に選択可能)" IsEnabled="False" />
+                    </MenuItem>
+                    <Separator />
+
                     <!-- その他 -->
                     <MenuItem Header="&#x1F4F8; スナップショット保存" Click="MenuSnapshot_Click" InputGestureText="S" />
                     <MenuItem Header="&#x1F4BF; DVDを開く..." Click="BtnOpenDvd_Click" />
