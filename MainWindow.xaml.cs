@@ -183,31 +183,26 @@ namespace DVDPlayer
                 // ドライブパスの正規化
                 var normalizedDrive = driveLetter.TrimEnd('\\', '/');
                 if (!normalizedDrive.EndsWith(':')) normalizedDrive += ":";
+                var drivePath = normalizedDrive + "\\";
 
-                // 方式1: dvd:// / bluray:// URI を試行
-                // 方式2: 直接パスを指定
-                // 方式3: VIDEO_TS / BDMV フォルダを直接指定
+                // 複数の方式を試行する
+                // ISO マウントの場合、dvd:// スキーム + 直接フォルダパスが最も確実
                 var urisToTry = new List<(string uri, FromType fromType, string description)>();
 
                 if (discType == DiscType.BluRay)
                 {
-                    urisToTry.Add(($"bluray:///{normalizedDrive}/", FromType.FromLocation, "Blu-ray URI"));
-                    var bdmvPath = System.IO.Path.Combine(normalizedDrive + "\\", "BDMV");
-                    urisToTry.Add((bdmvPath, FromType.FromPath, "BDMV フォルダパス"));
+                    urisToTry.Add(($"bluray:///{drivePath}", FromType.FromLocation, "Blu-ray URI"));
+                    urisToTry.Add(($"bluray:///{drivePath}BDMV", FromType.FromLocation, "BDMV URI"));
                 }
                 else
                 {
-                    urisToTry.Add(($"dvd:///{normalizedDrive}/", FromType.FromLocation, "DVD URI"));
-                    var videoTsPath = System.IO.Path.Combine(normalizedDrive + "\\", "VIDEO_TS");
-                    urisToTry.Add((videoTsPath, FromType.FromPath, "VIDEO_TS フォルダパス"));
+                    // DVD: VIDEO_TS を dvd:// スキームで指定（ISO マウント対応）
+                    urisToTry.Add(($"dvd:///{drivePath}VIDEO_TS", FromType.FromLocation, "DVD VIDEO_TS URI"));
+                    urisToTry.Add(($"dvd:///{drivePath}", FromType.FromLocation, "DVD ドライブ URI"));
+                    urisToTry.Add(($"dvd://{normalizedDrive}", FromType.FromLocation, "DVD シンプル URI"));
                 }
 
-                // 直接ドライブパスも追加
-                urisToTry.Add((normalizedDrive + "\\", FromType.FromPath, "ドライブ直接パス"));
-
-                // タイトルバーに状態を表示
                 Title = $"DVD Player - {(discType == DiscType.BluRay ? "Blu-ray" : "DVD")} 読み込み中...";
-
                 TryPlayUris(urisToTry, 0, discType);
             }
             catch (Exception ex)
@@ -729,12 +724,64 @@ namespace DVDPlayer
             var openFileDialog = new OpenFileDialog
             {
                 Title = "メディアファイルを開く",
-                Filter = "動画ファイル|*.mp4;*.mkv;*.avi;*.wmv;*.mov;*.iso|すべてのファイル|*.*"
+                Filter = "動画ファイル|*.mp4;*.mkv;*.avi;*.wmv;*.mov|ISO ディスクイメージ|*.iso|すべてのファイル|*.*"
             };
 
             if (openFileDialog.ShowDialog() == true)
             {
-                PlayMedia(openFileDialog.FileName);
+                var filePath = openFileDialog.FileName;
+                if (filePath.EndsWith(".iso", StringComparison.OrdinalIgnoreCase))
+                {
+                    PlayIsoFile(filePath);
+                }
+                else
+                {
+                    PlayMedia(filePath);
+                }
+            }
+        }
+
+        /// <summary>ISO ファイルを dvd:// スキームで直接再生する</summary>
+        private void PlayIsoFile(string isoPath)
+        {
+            if (_libVLC == null || _mediaPlayer == null) return;
+
+            try
+            {
+                _currentMediaKey = isoPath;
+                Title = "DVD Player - ISO ファイル読み込み中...";
+
+                // ISO ファイルを dvd:// スキームで開く
+                var dvdUri = $"dvd:///{isoPath.Replace('\\', '/')}";
+                System.Diagnostics.Debug.WriteLine($"[PlayIso] URI: {dvdUri}");
+
+                var media = new Media(_libVLC, dvdUri, FromType.FromLocation);
+                _mediaPlayer.Media = media;
+                _mediaPlayer.Play();
+                _subtitleSync?.Start();
+
+                System.Threading.Tasks.Task.Delay(3000).ContinueWith(_ =>
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        if (_mediaPlayer != null && _mediaPlayer.IsPlaying)
+                        {
+                            Title = "DVD Player - Dual Subtitles";
+                            _mediaPlayer.SetSpu(-1);
+                            CheckResume(_currentMediaKey);
+                        }
+                        else
+                        {
+                            Title = "DVD Player - Dual Subtitles";
+                        }
+                    });
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"ISO ファイルの再生に失敗しました:\n{ex.Message}",
+                    "エラー", MessageBoxButton.OK, MessageBoxImage.Error);
+                Title = "DVD Player - Dual Subtitles";
             }
         }
 
