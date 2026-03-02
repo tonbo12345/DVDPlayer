@@ -190,47 +190,85 @@ namespace DVDPlayer
             {
                 try
                 {
-                    // URI を構築
-                    string mediaUri;
-                    if (discType == DiscType.BluRay)
-                    {
-                        mediaUri = $"bluray:///{normalizedDrive}/";
-                    }
-                    else
-                    {
-                        mediaUri = $"dvd:///{normalizedDrive}/";
-                    }
+                    // --- 方式1: dvd:// URI で再生を試みる ---
+                    string mediaUri = discType == DiscType.BluRay
+                        ? $"bluray:///{normalizedDrive}/"
+                        : $"dvd:///{normalizedDrive}/";
 
-                    System.Diagnostics.Debug.WriteLine($"[PlayDisc] URI: {mediaUri}");
+                    System.Diagnostics.Debug.WriteLine($"[PlayDisc] 方式1 URI: {mediaUri}");
+                    Dispatcher.BeginInvoke(() => Title = "DVD Player - DVD URI で試行中...");
 
                     var media = new Media(_libVLC!, mediaUri, FromType.FromLocation);
-
-                    // BeginInvoke を使用（Invoke はデッドロックの原因になる）
                     Dispatcher.BeginInvoke(() =>
                     {
                         _mediaPlayer!.Media = media;
                         _mediaPlayer.Play();
                         _subtitleSync?.Start();
-                        Title = "DVD Player - 再生開始...";
                     });
 
-                    // 再生開始を待つ（最大10秒）
-                    for (int i = 0; i < 40; i++)
+                    // 再生開始を待つ（最大8秒）
+                    for (int i = 0; i < 32; i++)
                     {
                         System.Threading.Thread.Sleep(250);
                         if (_mediaPlayer!.IsPlaying)
                         {
-                            // 再生成功！
                             Dispatcher.BeginInvoke(() =>
                             {
                                 Title = "DVD Player - Dual Subtitles";
                                 _mediaPlayer?.SetSpu(-1);
                             });
-                            return;
+                            return; // 成功！
                         }
                     }
 
-                    // 10秒経っても再生が始まらない
+                    // --- 方式2: VOB ファイルを直接再生（マウントISO対応） ---
+                    System.Diagnostics.Debug.WriteLine("[PlayDisc] 方式1 失敗、VOB 直接再生にフォールバック");
+                    Dispatcher.BeginInvoke(() => Title = "DVD Player - VOB 直接再生で試行中...");
+
+                    var videoTsDir = System.IO.Path.Combine(normalizedDrive + "\\", "VIDEO_TS");
+                    if (System.IO.Directory.Exists(videoTsDir))
+                    {
+                        // 本編の VOB を特定: VTS_XX_1.VOB で最もサイズが大きいセットを探す
+                        var vobFiles = System.IO.Directory.GetFiles(videoTsDir, "VTS_*_1.VOB")
+                            .Select(f => new System.IO.FileInfo(f))
+                            .OrderByDescending(f => f.Length)
+                            .ToList();
+
+                        if (vobFiles.Count > 0)
+                        {
+                            // 最大の VTS_XX_1.VOB のプレフィックス（VTS_XX_）を取得
+                            var mainVob = vobFiles[0];
+                            var prefix = mainVob.Name.Substring(0, 7); // "VTS_07_"
+                            System.Diagnostics.Debug.WriteLine($"[PlayDisc] 本編 VOB: {prefix}");
+
+                            // VTS_XX_1.VOB, VTS_XX_2.VOB, ... をプレイリストとして連結再生
+                            var mainVobPath = mainVob.FullName;
+                            var vobMedia = new Media(_libVLC!, mainVobPath, FromType.FromPath);
+
+                            Dispatcher.BeginInvoke(() =>
+                            {
+                                _mediaPlayer!.Media = vobMedia;
+                                _mediaPlayer.Play();
+                                _subtitleSync?.Start();
+                            });
+
+                            // 再生開始を待つ（最大8秒）
+                            for (int i = 0; i < 32; i++)
+                            {
+                                System.Threading.Thread.Sleep(250);
+                                if (_mediaPlayer!.IsPlaying)
+                                {
+                                    Dispatcher.BeginInvoke(() =>
+                                    {
+                                        Title = "DVD Player - Dual Subtitles (VOB)";
+                                    });
+                                    return; // 成功！
+                                }
+                            }
+                        }
+                    }
+
+                    // すべて失敗
                     Dispatcher.BeginInvoke(() =>
                     {
                         Title = "DVD Player - Dual Subtitles";
@@ -239,8 +277,7 @@ namespace DVDPlayer
                             "ディスクを再生できませんでした。\n\n" +
                             "ISO ファイルの場合:\n" +
                             "右クリック → 「メディアファイルを開く」から\n" +
-                            "ISO ファイルを直接選択してください。\n\n" +
-                            $"試行した URI: {mediaUri}",
+                            "ISO ファイルを直接選択してください。",
                             "再生エラー", MessageBoxButton.OK, MessageBoxImage.Warning);
                     });
                 }
@@ -941,7 +978,7 @@ namespace DVDPlayer
             ControlBar.Visibility = Visibility.Visible;
         }
 
-        private void SubtitleOverlay_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
+        private void VideoArea_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
         {
             // 右クリックメニューはContextMenuで自動表示
         }
